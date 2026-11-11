@@ -105,8 +105,8 @@ label.lbl { font-size: .8rem; font-weight: 600; color: var(--muted); display: bl
 .group-title { font: 600 .95rem var(--display); margin: 18px 0 8px; display: flex; align-items: center; gap: 8px; }
 nav.bar { position: fixed; left: 0; right: 0; bottom: 0; background: var(--surface); border-top: 1px solid var(--line); display: flex; justify-content: center;
 padding: 6px max(16px, env(safe-area-inset-right, 0px)) calc(6px + env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px)); z-index: 5; }
-nav.bar .in { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; width: 100%; max-width: 34rem; }
-nav.bar button { min-height: 48px; border: 0; background: transparent; border-radius: 12px; font-weight: 600; color: var(--muted); font-size: .95rem; }
+nav.bar .in { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; width: 100%; max-width: 34rem; }
+nav.bar button { min-height: 48px; border: 0; background: transparent; border-radius: 12px; font-weight: 600; color: var(--muted); font-size: .88rem; }
 nav.bar button[aria-current="page"] { background: var(--soft); color: var(--accent); }
 .set.rg { grid-template-columns: 2rem 1fr 1fr 52px; }
 .set.rg.one { grid-template-columns: 2rem 1fr 52px; }
@@ -128,6 +128,12 @@ nav.bar button[aria-current="page"] { background: var(--soft); color: var(--acce
 .tbar b { flex: 1; font: 700 1.2rem var(--display); font-variant-numeric: tabular-nums; }
 .tbar button { min-height: 44px; border: 1px solid currentColor; border-radius: 10px; padding: 0 12px; font-weight: 600; background: transparent; color: inherit; }
 .tbar .fill { position: absolute; left: 0; bottom: 0; height: 4px; background: var(--accent-fg); opacity: .5; display: block; }
+svg.chart { width: 100%; height: auto; display: block; margin-top: 8px; }
+.gb { display: grid; grid-template-columns: 5.5rem 1fr 2rem; gap: 8px; align-items: center; font-size: .88rem; margin: 6px 0; }
+.gb i { display: block; height: 10px; border-radius: 5px; background: var(--c); }
+.gb b { text-align: right; font-variant-numeric: tabular-nums; }
+.brow { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: .9rem; font-variant-numeric: tabular-nums; }
+.two-col input { width: 100%; min-height: 44px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); padding: 8px 10px; }
 @media (prefers-reduced-motion: no-preference) { .btn, .icon-btn, .day { transition: background-color .15s; } }
 </style>
 </head>
@@ -137,6 +143,7 @@ nav.bar button[aria-current="page"] { background: var(--soft); color: var(--acce
 <nav class="bar" aria-label="Navigation"><div class="in">
 <button data-a="view" data-v="seance">Séance</button>
 <button data-a="view" data-v="cal">Calendrier</button>
+<button data-a="view" data-v="stats">Stats</button>
 <button data-a="view" data-v="mach">Machines</button>
 </div></nav>
 <input type="file" id="imp" accept="application/json,.json" hidden>
@@ -193,11 +200,11 @@ s['2026-10-27'] = { note: '', ex: [
 { m: 'releve', sets: sets(2, 0, 15) },
 { m: 'gainage', sets: sets(2, 0, 60) }
 ] };
-return { sessions: s, custom: [], plans: {} };
+return { sessions: s, custom: [], plans: {}, body: [] };
 }
 var mem = null;
 function load() {
-try { var r = localStorage.getItem(KEY); if (r) { var o = JSON.parse(r); if (o && o.sessions) { o.custom = o.custom || []; o.plans = o.plans || {}; if (o.plan) { var tk = fmt(new Date()); if (!o.plans[tk]) o.plans[tk] = o.plan; delete o.plan; } return o; } } } catch (e) {}
+try { var r = localStorage.getItem(KEY); if (r) { var o = JSON.parse(r); if (o && o.sessions) { o.custom = o.custom || []; o.plans = o.plans || {}; o.body = o.body || []; if (o.plan) { var tk = fmt(new Date()); if (!o.plans[tk]) o.plans[tk] = o.plan; delete o.plan; } return o; } } } catch (e) {}
 return mem || seed();
 }
 var state = load();
@@ -273,6 +280,10 @@ if (cur > rec.sc) h += ' · <strong class="rec">Nouveau record !</strong>';
 }
 return h;
 }
+function infoFor(id) {
+var m = M(id), lp = last(id, ui.date), rec = recordOf(id, ui.date);
+return (lp ? 'Dernière fois (' + shortDate(lp.d) + ') : ' + esc(describe(m, lp.sets)) : 'Pas encore fait') + (rec ? '<br>Max : ' + esc(recText(m, rec)) + ' (' + shortDate(rec.d) + ')' : '');
+}
 function summaryText() {
 var ds = dates().slice(-12).reverse();
 var L = ['Carnet de salle, résumé du ' + today, '', 'SÉANCES (la plus récente en premier)'];
@@ -285,6 +296,10 @@ L.push('');
 });
 L.push('RECORDS PAR MACHINE');
 allM().forEach(function (m) { var r = recordOf(m.id, ''); if (r) L.push('- ' + m.name + ' : ' + recText(m, r) + ' (' + shortDate(r.d) + ')'); });
+if (state.body.length) {
+L.push('', 'MESURES (la plus récente en premier)');
+state.body.slice(-10).reverse().forEach(function (b) { L.push('- ' + shortDate(b.d) + ' : ' + (b.kg ? nf(b.kg) + ' kg' : '') + (b.kg && b.w ? ' · ' : '') + (b.w ? 'tour de taille ' + nf(b.w) + ' cm' : '')); });
+}
 return L.join('\n');
 }
 function shareCard() {
@@ -482,7 +497,7 @@ var byG = {};
 allM().forEach(function (m) { (byG[m.g] = byG[m.g] || []).push(m); });
 h += '<section class="card add"><label class="lbl" for="sel">Ajouter une machine</label><select id="sel">' +
 Object.keys(GROUPS).map(function (g) { return byG[g] ? '<optgroup label="' + GROUPS[g] + '">' + byG[g].map(function (m) { return '<option value="' + esc(m.id) + '">' + esc(m.name) + '</option>'; }).join('') + '</optgroup>' : ''; }).join('') +
-'</select><button class="btn primary" data-a="addex">Ajouter à la séance</button>' +
+'</select><p class="hint" id="selinfo" style="margin:0">' + infoFor((byG[Object.keys(GROUPS).filter(function (g) { return byG[g]; })[0]] || [{ id: 'velo' }])[0].id) + '</p><button class="btn primary" data-a="addex">Ajouter à la séance</button>' +
 '<details><summary>Créer mon propre exercice</summary><div class="add" style="margin-top:6px"><div><label class="lbl" for="nm-name">Nom</label><input type="text" id="nm-name" placeholder="Ex. Hack squat"></div>' +
 '<div class="two-col"><div><label class="lbl" for="nm-g">Groupe</label><select id="nm-g">' + Object.keys(GROUPS).map(function (g) { return '<option value="' + g + '">' + GROUPS[g] + '</option>'; }).join('') + '</select></div>' +
 '<div><label class="lbl" for="nm-t">Mesure</label><select id="nm-t"><option value="kg">Poids et répétitions</option><option value="assist">Avec assistance (dips, tractions)</option><option value="reps">Répétitions seules (poids du corps)</option><option value="time">Durée</option></select></div></div>' +
@@ -540,6 +555,73 @@ h += '<div class="row"><button class="btn" data-a="cmerge" data-k="' + k + '">Fu
 h += '<p class="hint" role="status">' + esc(ui.cmsg || '') + '</p></section>';
 return h;
 }
+function lineChart(pts, unit) {
+if (pts.length < 2) return '<p class="hint">Ajoute au moins deux mesures pour voir la courbe.</p>';
+var W = 300, H = 110, px = 10, py = 16;
+var t0 = parse(pts[0].d).getTime(), t1 = parse(pts[pts.length - 1].d).getTime() || t0 + 1, vs = pts.map(function (q) { return q.v; });
+var mn = Math.min.apply(null, vs), mx = Math.max.apply(null, vs), r = mx - mn || 1;
+var xy = pts.map(function (q) { return [px + (t1 === t0 ? 0 : (parse(q.d).getTime() - t0) / (t1 - t0)) * (W - 2 * px), H - py - (q.v - mn) / r * (H - 2 * py)]; });
+var e = xy[xy.length - 1];
+return '<svg class="chart" viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="Courbe de ' + nf(vs[0]) + ' à ' + nf(vs[vs.length - 1]) + ' ' + unit + '"><polyline points="' + xy.map(function (q) { return q[0].toFixed(1) + ',' + q[1].toFixed(1); }).join(' ') + '" fill="none" stroke="var(--accent)" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/><circle cx="' + e[0].toFixed(1) + '" cy="' + e[1].toFixed(1) + '" r="4" fill="var(--accent)"/><text x="' + px + '" y="10" font-size="10" fill="var(--muted)">max ' + nf(mx) + ' ' + unit + '</text><text x="' + px + '" y="' + (H - 2) + '" font-size="10" fill="var(--muted)">min ' + nf(mn) + ' ' + unit + '</text></svg>';
+}
+function barChart(vals, labels, goal, f) {
+var W = 300, H = 120, top = 16, bot = 16, n = vals.length, bw = (W - 20) / n, mx = Math.max.apply(null, vals.concat([goal || 0, 1]));
+var h = '<svg class="chart" viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="Histogramme sur ' + n + ' semaines">';
+if (goal) { var gy = H - bot - goal / mx * (H - top - bot); h += '<line x1="10" x2="' + (W - 10) + '" y1="' + gy.toFixed(1) + '" y2="' + gy.toFixed(1) + '" stroke="var(--muted)" stroke-dasharray="4 4"/>'; }
+vals.forEach(function (v, i) {
+var bh = v / mx * (H - top - bot), x = 10 + i * bw + bw * 0.15, y = H - bot - bh;
+h += '<rect x="' + x.toFixed(1) + '" y="' + y.toFixed(1) + '" width="' + (bw * 0.7).toFixed(1) + '" height="' + Math.max(bh, 1).toFixed(1) + '" rx="3" fill="var(--accent)"' + (i === n - 1 ? '' : ' opacity=".7"') + '/>';
+h += '<text x="' + (x + bw * 0.35).toFixed(1) + '" y="' + (y - 3).toFixed(1) + '" font-size="9" text-anchor="middle" fill="var(--fg)">' + (v ? f(v) : '') + '</text>';
+h += '<text x="' + (x + bw * 0.35).toFixed(1) + '" y="' + (H - 3) + '" font-size="9" text-anchor="middle" fill="var(--muted)">' + labels[i] + '</text>';
+});
+return h + '</svg>';
+}
+function viewStats() {
+var h = '<div class="head"><div><p class="eyebrow">Suivi</p><h1>Stats</h1></div></div>';
+var b = state.body, lb = b.length ? b[b.length - 1] : null;
+h += '<section class="card"><h2 class="ex-name">Poids et tour de taille</h2>';
+if (lb) {
+var wk = b.filter(function (x) { return x.kg; }), pw = wk.length > 1 ? wk[wk.length - 2] : null, cw = wk.length ? wk[wk.length - 1] : null;
+var line = cw ? nf(cw.kg) + ' kg' + (pw ? ' (' + (cw.kg - pw.kg > 0 ? '+' : '') + nf(cw.kg - pw.kg) + ' kg depuis le ' + shortDate(pw.d) + ')' : '') : '';
+var ww = b.filter(function (x) { return x.w; }), lw = ww.length ? ww[ww.length - 1] : null;
+h += '<p class="sum" style="margin:6px 0 0">' + esc(line) + (cw && lw ? ' · ' : '') + (lw ? 'taille ' + nf(lw.w) + ' cm' : '') + '</p>';
+}
+h += '<div class="two-col" style="margin-top:10px"><div><label class="lbl" for="b-kg">Poids (kg)</label><input type="text" inputmode="decimal" id="b-kg" placeholder="88"></div><div><label class="lbl" for="b-w">Tour de taille (cm)</label><input type="text" inputmode="decimal" id="b-w" placeholder="100"></div></div>';
+h += '<div class="row"><button class="btn primary" data-a="bodysave">Enregistrer aujourd’hui</button></div><p class="hint" role="status">' + esc(ui.bmsg || '') + '</p>';
+h += lineChart(b.filter(function (x) { return x.kg; }).map(function (x) { return { d: x.d, v: x.kg }; }), 'kg');
+if (b.some(function (x) { return x.w; })) h += lineChart(b.filter(function (x) { return x.w; }).map(function (x) { return { d: x.d, v: x.w }; }), 'cm');
+if (b.length) {
+h += '<p class="hint" style="margin-bottom:0">Dernières mesures</p><div class="plist" style="margin-top:6px">';
+b.map(function (x, i) { return { x: x, i: i }; }).reverse().slice(0, 6).forEach(function (o) {
+var arm = ui.armed === 'b' + o.i;
+h += '<div class="brow"><span>' + esc(shortDate(o.x.d)) + ' : ' + (o.x.kg ? nf(o.x.kg) + ' kg' : '') + (o.x.kg && o.x.w ? ' · ' : '') + (o.x.w ? nf(o.x.w) + ' cm' : '') + '</span><button class="btn ghost" data-a="' + (arm ? 'bodydel' : 'arm') + '" data-i="' + o.i + '" data-k="b' + o.i + '">' + (arm ? 'Supprimer ?' : '✕') + '</button></div>';
+});
+h += '</div>';
+}
+h += '</section>';
+var ws0 = weekStart(new Date()), cnt = [], vol = [], lab = [];
+for (var k = 7; k >= 0; k--) {
+var ws = shift(ws0, -7 * k), we = shift(ws, 6), v = 0;
+dates().forEach(function (d) { if (d >= ws && d <= we) v += volume(state.sessions[d]).v; });
+cnt.push(weekCount(ws)); vol.push(v); lab.push(parse(ws).getDate() + '/' + (parse(ws).getMonth() + 1));
+}
+h += '<section class="card"><h2 class="ex-name">Séances par semaine</h2><p class="hint">Objectif : ' + GOAL + ' (ligne pointillée)</p>' + barChart(cnt, lab, GOAL, function (v) { return v; }) + '</section>';
+h += '<section class="card"><h2 class="ex-name">Volume soulevé par semaine</h2><p class="hint">Poids × répétitions, en tonnes (hors assistance et durées)</p>' + barChart(vol, lab, 0, function (v) { return nf(v / 1000); }) + '</section>';
+var since = shift(today, -27), gc = {}, tot = 0;
+dates().forEach(function (d) { if (d >= since) state.sessions[d].ex.forEach(function (e) { var g = M(e.m).g; gc[g] = (gc[g] || 0) + e.sets.length; tot += e.sets.length; }); });
+h += '<section class="card"><h2 class="ex-name">Répartition des séries</h2><p class="hint">28 derniers jours</p>';
+if (!tot) h += '<p class="hint">Pas encore de données.</p>';
+Object.keys(GROUPS).forEach(function (g) { var n = gc[g] || 0; h += '<div class="gb" style="--c:var(--g-' + g + ')"><span>' + GROUPS[g] + '</span><span><i style="width:' + (tot ? Math.max(n ? 4 : 0, Math.round(n / tot * 100)) : 0) + '%"></i></span><b>' + n + '</b></div>'; });
+h += '</section>';
+var recs = [];
+allM().forEach(function (m) { var r = recordOf(m.id, ''); if (r) recs.push({ m: m, r: r }); });
+recs.sort(function (a, c) { return a.r.d < c.r.d ? 1 : a.r.d > c.r.d ? -1 : 0; });
+h += '<section class="card"><h2 class="ex-name">Records récents</h2><ul class="plist">';
+recs.slice(0, 8).forEach(function (o) { h += '<li><b>' + esc(o.m.name) + '</b>' + esc(recText(o.m, o.r)) + ' · ' + esc(shortDate(o.r.d)) + '</li>'; });
+if (!recs.length) h += '<li>Pas encore de record.</li>';
+h += '</ul></section>';
+return h + shareCard();
+}
 function viewMach() {
 var h = '<div class="head"><div><p class="eyebrow">Progression</p><h1>Machines</h1></div></div>';
 var any = false;
@@ -573,7 +655,7 @@ return h;
 }
 function render() {
 var app = document.getElementById('app');
-app.innerHTML = ui.view === 'cal' ? viewCal() : ui.view === 'mach' ? viewMach() : ui.view === 'run' ? viewRun() : viewSeance();
+app.innerHTML = ui.view === 'cal' ? viewCal() : ui.view === 'mach' ? viewMach() : ui.view === 'stats' ? viewStats() : ui.view === 'run' ? viewRun() : viewSeance();
 wake(ui.view === 'run');
 updateTbar();
 Array.prototype.forEach.call(document.querySelectorAll('nav.bar button'), function (b) {
@@ -643,6 +725,20 @@ ui.pmsg = res.msg;
 if (res.ok && res.dates.length === 1) { ui.view = 'seance'; ui.date = res.dates[0]; ui.pmsg = ''; window.scrollTo(0, 0); }
 }
 else if (a === 'plandrop') { delete state.plans[ui.date]; save(); }
+else if (a === 'bodysave') {
+var bk = num(document.getElementById('b-kg').value), bw = num(document.getElementById('b-w').value);
+if (!bk && !bw) ui.bmsg = 'Entre au moins le poids ou le tour de taille.';
+else {
+var be = state.body.filter(function (x) { return x.d === today; })[0];
+if (!be) { be = { d: today }; state.body.push(be); }
+if (bk) be.kg = bk;
+if (bw) be.w = bw;
+state.body.sort(function (x, y) { return x.d < y.d ? -1 : x.d > y.d ? 1 : 0; });
+ui.bmsg = 'Mesure enregistrée.';
+save();
+}
+}
+else if (a === 'bodydel') { state.body.splice(i, 1); save(); }
 else if (a === 'planmove') { if (state.plans[ui.date] && !state.plans[today]) { state.plans[today] = state.plans[ui.date]; delete state.plans[ui.date]; ui.date = today; save(); } }
 else if (a === 'cmerge') {
 var ck = +t.getAttribute('data-k'), csrc = state.custom[ck], cdst = document.getElementById('cm-' + ck).value;
@@ -717,6 +813,7 @@ if (el) el.textContent = sumText(s);
 var hi = t.getAttribute('data-i'), hp = document.getElementById('hint' + hi);
 if (hp) hp.innerHTML = hintHtml(s.ex[+hi]);
 });
+document.addEventListener('change', function (ev) { if (ev.target && ev.target.id === 'sel') { var el = document.getElementById('selinfo'); if (el) el.innerHTML = infoFor(ev.target.value); } });
 document.addEventListener('visibilitychange', function () { if (!document.hidden) { tick(); if (ui.view === 'run') wake(true); } });
 document.getElementById('imp').addEventListener('change', function (ev) {
 var file = ev.target.files && ev.target.files[0];
@@ -729,6 +826,8 @@ var o = JSON.parse(r.result);
 if (!o || typeof o.sessions !== 'object') throw new Error('format');
 Object.keys(o.sessions).forEach(function (d) { if (o.sessions[d] && Array.isArray(o.sessions[d].ex)) state.sessions[d] = o.sessions[d]; });
 (o.custom || []).forEach(function (m) { if (m && m.id && !state.custom.some(function (c) { return c.id === m.id; })) state.custom.push(m); });
+(o.body || []).forEach(function (x) { if (x && x.d && !state.body.some(function (y) { return y.d === x.d; })) state.body.push(x); });
+state.body.sort(function (x, y) { return x.d < y.d ? -1 : x.d > y.d ? 1 : 0; });
 save(); msg = 'Séances importées.';
 } catch (e) { msg = 'Ce fichier n’est pas une sauvegarde valide.'; }
 render();
