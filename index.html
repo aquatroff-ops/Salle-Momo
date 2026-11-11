@@ -87,6 +87,7 @@ label.lbl { font-size: .8rem; font-weight: 600; color: var(--muted); display: bl
 .day { aspect-ratio: 1 / 1.05; min-height: 44px; border: 1px solid transparent; border-radius: 10px; background: var(--surface); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; font-variant-numeric: tabular-nums; padding: 2px; }
 .day.off { background: transparent; }
 .day.has { border-color: var(--line); }
+.day.plan { border: 1px dashed var(--accent); }
 .day.today { outline: 2px solid var(--accent); outline-offset: -2px; font-weight: 700; }
 .day.sel { background: var(--soft); }
 .dots { display: flex; gap: 2px; min-height: 7px; }
@@ -153,6 +154,7 @@ var BASE = [
 { id: 'shoulder-press', name: 'Shoulder press', g: 'epaules' },
 { id: 'lateral', name: 'Élévations latérales', g: 'epaules' },
 { id: 'rear-delt', name: 'Oiseau inversé (rear delt)', g: 'epaules' },
+{ id: 'face-pull', name: 'Face pull', g: 'epaules' },
 { id: 'arm-curl', name: 'Arm curl', g: 'bras' },
 { id: 'triceps', name: 'Triceps poulie', g: 'bras' },
 { id: 'dip-assist', name: 'Dips assistés', g: 'bras', assist: true },
@@ -162,6 +164,8 @@ var BASE = [
 { id: 'hip-add', name: 'Adducteurs', g: 'jambes' },
 { id: 'hip-abd', name: 'Abducteurs', g: 'jambes' },
 { id: 'calf', name: 'Mollets (machine)', g: 'jambes' },
+{ id: 'hip-thrust', name: 'Hip thrust', g: 'jambes' },
+{ id: 'rdl', name: 'Soulevé de terre roumain', g: 'jambes' },
 { id: 'abdo-incl', name: 'Abdos inclinés', g: 'abdos' },
 { id: 'releve', name: 'Relevés de jambes', g: 'abdos' },
 { id: 'gainage', name: 'Gainage', g: 'abdos', t: 'time' },
@@ -189,11 +193,11 @@ s['2026-10-27'] = { note: '', ex: [
 { m: 'releve', sets: sets(2, 0, 15) },
 { m: 'gainage', sets: sets(2, 0, 60) }
 ] };
-return { sessions: s, custom: [] };
+return { sessions: s, custom: [], plans: {} };
 }
 var mem = null;
 function load() {
-try { var r = localStorage.getItem(KEY); if (r) { var o = JSON.parse(r); if (o && o.sessions) { o.custom = o.custom || []; return o; } } } catch (e) {}
+try { var r = localStorage.getItem(KEY); if (r) { var o = JSON.parse(r); if (o && o.sessions) { o.custom = o.custom || []; o.plans = o.plans || {}; if (o.plan) { var tk = fmt(new Date()); if (!o.plans[tk]) o.plans[tk] = o.plan; delete o.plan; } return o; } } } catch (e) {}
 return mem || seed();
 }
 var state = load();
@@ -359,11 +363,10 @@ if (e.t === 'assist') m.assist = true;
 state.custom.push(m);
 return m.id;
 }
-function importPlan(txt) {
-var o;
-try { o = JSON.parse(String(txt).trim()); } catch (err) { return { ok: false, msg: 'Ce texte n’est pas un code de séance valide. Colle le code en entier, sans rien avant ni après.' }; }
-var p = o && o.plan ? o.plan : o;
-if (!p || !Array.isArray(p.ex) || !p.ex.length) return { ok: false, msg: 'Aucun exercice trouvé dans ce code.' };
+function PL() { return state.plans[ui.date]; }
+function validDate(d) { return /^\d{4}-\d{2}-\d{2}$/.test(d) && fmt(parse(d)) === d; }
+function buildPlan(p) {
+if (!p || !Array.isArray(p.ex) || !p.ex.length) return null;
 var plan = { titre: String(p.titre || 'Séance préparée').slice(0, 60), rest: num(p.rest) || 90, restEx: num(p.restEx) || 120, idx: 0, ex: [] };
 p.ex.slice(0, 20).forEach(function (e) {
 var id = resolveMachine(e), sets = [];
@@ -372,13 +375,25 @@ if (Array.isArray(e.s)) e.s.slice(0, 12).forEach(function (x) { sets.push({ kg: 
 else for (var k = 0, n = Math.min(12, num(e.n) || 3); k < n; k++) sets.push({ kg: num(e.kg), reps: num(e.r), done: false });
 if (sets.length) plan.ex.push({ m: id, sets: sets, rest: num(e.rest) || 0 });
 });
-if (!plan.ex.length) return { ok: false, msg: 'Aucun exercice utilisable dans ce code.' };
-state.plan = plan;
+return plan.ex.length ? plan : null;
+}
+function importPlan(txt) {
+var o;
+try { o = JSON.parse(String(txt).trim()); } catch (err) { return { ok: false, msg: 'Ce texte n’est pas un code de séance valide. Colle le code en entier, sans rien avant ni après.' }; }
+var list = Array.isArray(o) ? o : (o && Array.isArray(o.plans) ? o.plans : [o && o.plan ? o.plan : o]);
+var got = [], bad = 0;
+list.slice(0, 120).forEach(function (p) {
+var d = p && p.date ? String(p.date) : today, pl = validDate(d) ? buildPlan(p) : null;
+if (!pl) { bad++; return; }
+state.plans[d] = pl; got.push(d);
+});
+if (!got.length) return { ok: false, msg: 'Aucune séance utilisable dans ce code. Colle le code en entier, sans rien avant ni après.' };
 save();
-return { ok: true, msg: 'Séance « ' + plan.titre + ' » chargée.' };
+got.sort();
+return { ok: true, dates: got, msg: got.length > 1 ? got.length + ' séances programmées.' + (bad ? ' ' + bad + ' ignorée(s).' : '') : 'Séance chargée pour le ' + shortDate(got[0]) + '.' };
 }
 function finishPlan() {
-var p = state.plan, ses = null;
+var p = PL(), ses = null;
 if (!p) return;
 p.ex.forEach(function (e) {
 var d = e.sets.filter(function (x) { return x.done; }).map(function (x) { return { kg: x.kg, reps: x.reps }; });
@@ -387,21 +402,32 @@ if (!ses) ses = state.sessions[today] = state.sessions[today] || { note: '', ex:
 ses.ex.push({ m: e.m, sets: d });
 });
 if (ses && !ses.note) ses.note = 'Séance préparée : ' + p.titre;
-state.plan = null; ui.view = 'seance'; ui.date = today; stopTimer(); save();
+delete state.plans[ui.date];
+ui.view = 'seance'; ui.date = today; stopTimer(); save();
 }
 function planCard() {
-var p = state.plan;
+var p = PL();
+if (!p) {
 if (ui.date !== today) return '';
-if (!p) return '<button class="pill" data-a="view" data-v="mach">Importer une séance préparée</button>';
+var nx = Object.keys(state.plans).filter(function (d) { return d > today; }).sort()[0];
+return nx ? '<button class="pill" data-a="pick" data-d="' + nx + '">Prochaine séance : ' + esc(state.plans[nx].titre) + ', ' + esc(shortDate(nx)) + '</button>' : '<button class="pill" data-a="view" data-v="mach">Importer une séance préparée</button>';
+}
 var started = p.ex.some(function (e) { return e.sets.some(function (x) { return x.done; }); });
-var h = '<section class="card"><span class="tag">Séance préparée</span><h2 class="ex-name">' + esc(p.titre) + '</h2><ul class="plist">';
+var h = '<section class="card"><span class="tag">Séance préparée' + (ui.date !== today ? ' · prévue le ' + esc(shortDate(ui.date)) : '') + '</span><h2 class="ex-name">' + esc(p.titre) + '</h2><ul class="plist">';
 p.ex.forEach(function (e) { var m = M(e.m); h += '<li><b>' + esc(m.name) + '</b>' + esc(describe(m, e.sets)) + '</li>'; });
-h += '</ul><button class="btn primary big" data-a="runstart">' + (started ? 'Reprendre la séance' : 'Commencer la séance') + '</button>';
-h += '<div class="row"><button class="btn ghost" data-a="' + (ui.armed === 'plan' ? 'plandrop' : 'arm') + '" data-k="plan">' + (ui.armed === 'plan' ? 'Retirer la séance ?' : 'Retirer') + '</button></div></section>';
+h += '</ul><button class="btn primary big" data-a="runstart">' + (started ? 'Reprendre la séance' : (ui.date !== today ? 'Faire cette séance maintenant' : 'Commencer la séance')) + '</button>';
+h += '<div class="row"><button class="btn ghost" data-a="' + (ui.armed === 'plan' ? 'plandrop' : 'arm') + '" data-k="plan">' + (ui.armed === 'plan' ? 'Retirer la séance ?' : 'Retirer') + '</button>' + (ui.date !== today && !state.plans[today] ? '<button class="btn ghost" data-a="planmove">Déplacer à aujourd’hui</button>' : '') + '</div></section>';
 return h;
 }
+function viewProg() {
+var ds = Object.keys(state.plans).sort();
+if (!ds.length) return '';
+var h = '<section class="card"><h2 class="ex-name">Séances programmées</h2><ul class="plist">';
+ds.slice(0, 60).forEach(function (d) { var p = state.plans[d]; h += '<li><button class="btn ghost" style="width:100%;text-align:left" data-a="pick" data-d="' + d + '"><b>' + esc(cap(parse(d).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' }))) + '</b>' + esc(p.titre) + ' · ' + p.ex.length + ' exercices</button></li>'; });
+return h + '</ul></section>';
+}
 function viewRun() {
-var p = state.plan;
+var p = PL();
 if (!p) return '<div class="card empty"><strong>Aucune séance préparée</strong>Importe un code de séance depuis l’onglet Machines.</div>';
 var i = p.idx, e = p.ex[i], m = M(e.m), one = !!m.t, isLast = i === p.ex.length - 1;
 var h = '<div class="head"><div><p class="eyebrow">' + esc(p.titre) + ' · exercice ' + (i + 1) + ' sur ' + p.ex.length + '</p><h1>' + esc(m.name) + '</h1></div></div>';
@@ -474,15 +500,15 @@ var h = '<div class="head"><div><p class="eyebrow">Calendrier</p><h1>' + esc(tit
 h += '<div class="cal">' + ['L', 'M', 'M', 'J', 'V', 'S', 'D'].map(function (x) { return '<div class="wd">' + x + '</div>'; }).join('');
 for (var i = 0; i < offset; i++) h += '<div class="day off"></div>';
 for (var k = 1; k <= days; k++) {
-var ds = ui.month + '-' + pad(k), s = state.sessions[ds], has = s && s.ex.length;
+var ds = ui.month + '-' + pad(k), s = state.sessions[ds], has = s && s.ex.length, pln = !!state.plans[ds] && !has;
 var gs = [];
-if (has) s.ex.forEach(function (e) { var g = M(e.m).g; if (gs.indexOf(g) < 0) gs.push(g); });
-h += '<button class="day' + (has ? ' has' : '') + (ds === today ? ' today' : '') + (ds === ui.date ? ' sel' : '') + '" data-a="pick" data-d="' + ds + '" aria-label="' + k + (has ? ', séance' : '') + '"><span>' + k + '</span><span class="dots">' +
+(has ? s.ex : (pln ? state.plans[ds].ex : [])).forEach(function (e) { var g = M(e.m).g; if (gs.indexOf(g) < 0) gs.push(g); });
+h += '<button class="day' + (has ? ' has' : '') + (pln ? ' plan' : '') + (ds === today ? ' today' : '') + (ds === ui.date ? ' sel' : '') + '" data-a="pick" data-d="' + ds + '" aria-label="' + k + (has ? ', séance' : pln ? ', séance prévue' : '') + '"><span>' + k + '</span><span class="dots">' +
 gs.slice(0, 4).map(function (g) { return '<i style="--c:var(--g-' + g + ')"></i>'; }).join('') + '</span></button>';
 }
 h += '</div>';
 h += '<div class="stats"><div class="stat"><b>' + inMonth + '</b><span>' + (inMonth > 1 ? 'séances' : 'séance') + ' ce mois</span></div><div class="stat"><b>' + weekCount(weekStart(new Date())) + ' / ' + GOAL + '</b><span>cette semaine</span></div><div class="stat"><b>' + streak() + '</b><span>semaines à ' + GOAL + ' séances d’affilée</span></div></div>';
-h += '<div class="legend">' + Object.keys(GROUPS).map(function (g) { return '<span style="--c:var(--g-' + g + ')"><i class="dot"></i>' + GROUPS[g] + '</span>'; }).join('') + '</div>';
+h += '<div class="legend">' + Object.keys(GROUPS).map(function (g) { return '<span style="--c:var(--g-' + g + ')"><i class="dot"></i>' + GROUPS[g] + '</span>'; }).join('') + '</div><p class="hint">Contour en pointillés : séance programmée.</p>';
 return h;
 }
 function spark(vals) {
@@ -503,7 +529,7 @@ function viewCustom() {
 if (!state.custom.length) return '';
 var h = '<section class="card"><h2 class="ex-name">Mes exercices</h2><p class="hint">Renomme un exercice, change son groupe ou fusionne un doublon avec un autre exercice. L’historique est conservé.</p>';
 state.custom.forEach(function (m, k) {
-var n = useCount(m.id), inPlan = !!(state.plan && state.plan.ex.some(function (e) { return e.m === m.id; }));
+var n = useCount(m.id), inPlan = Object.keys(state.plans).some(function (d) { return state.plans[d].ex.some(function (e) { return e.m === m.id; }); });
 h += '<details><summary>' + esc(m.name) + '&nbsp;<span class="hint" style="margin:0">· ' + n + (n > 1 ? ' séances' : ' séance') + '</span></summary><div class="add" style="margin-top:6px">';
 h += '<div><label class="lbl" for="cn-' + k + '">Nom</label><input type="text" id="cn-' + k + '" data-cf="name" data-k="' + k + '" value="' + esc(m.name) + '"></div>';
 h += '<div><label class="lbl" for="cg-' + k + '">Groupe</label><select id="cg-' + k + '" data-cf="g" data-k="' + k + '">' + Object.keys(GROUPS).map(function (g) { return '<option value="' + g + '"' + (g === m.g ? ' selected' : '') + '>' + GROUPS[g] + '</option>'; }).join('') + '</select></div>';
@@ -538,7 +564,8 @@ rows += '<div class="card"><div class="m-row"><div><h2 class="ex-name">' + esc(m
 if (rows) h += '<h2 class="group-title" style="--c:var(--g-' + g + ')"><i class="dot"></i>' + GROUPS[g] + '</h2>' + rows;
 });
 if (!any) h += '<div class="card empty"><strong>Rien à suivre pour l’instant</strong>Enregistre une séance pour voir ta progression.</div>';
-h += '<section class="card" style="margin-top:20px"><h2 class="ex-name">Importer une séance préparée</h2><p class="hint">Colle ici le code de séance envoyé par Claude. La séance apparaît ensuite en haut de l’écran Séance.</p><textarea id="plan-in" placeholder="Colle le code ici"></textarea><div class="row"><button class="btn primary" data-a="planimp">Charger la séance</button></div><p class="hint" id="pmsg" role="status">' + esc(ui.pmsg || '') + '</p></section>';
+h += '<section class="card" style="margin-top:20px"><h2 class="ex-name">Importer une séance préparée</h2><p class="hint">Colle ici le code envoyé par Claude. Si le code contient des dates, les séances sont programmées dans le calendrier.</p><textarea id="plan-in" placeholder="Colle le code ici"></textarea><div class="row"><button class="btn primary" data-a="planimp">Charger la séance</button></div><p class="hint" id="pmsg" role="status">' + esc(ui.pmsg || '') + '</p></section>';
+h += viewProg();
 h += shareCard();
 h += viewCustom();
 h += '<section class="card"><h2 class="ex-name">Sauvegarde</h2><p class="hint">Tes séances sont enregistrées dans ce navigateur. Exporte un fichier de temps en temps, il sert aussi à changer de téléphone.</p><div class="row"><button class="btn" data-a="export">Exporter</button><button class="btn" data-a="import">Importer</button></div><p class="hint" id="dmsg" role="status"></p></section>';
@@ -613,16 +640,17 @@ else if (a === 'import') { document.getElementById('imp').click(); return; }
 else if (a === 'planimp') {
 var res = importPlan(document.getElementById('plan-in').value);
 ui.pmsg = res.msg;
-if (res.ok) { ui.view = 'seance'; ui.date = today; ui.pmsg = ''; window.scrollTo(0, 0); }
+if (res.ok && res.dates.length === 1) { ui.view = 'seance'; ui.date = res.dates[0]; ui.pmsg = ''; window.scrollTo(0, 0); }
 }
-else if (a === 'plandrop') { state.plan = null; save(); }
+else if (a === 'plandrop') { delete state.plans[ui.date]; save(); }
+else if (a === 'planmove') { if (state.plans[ui.date] && !state.plans[today]) { state.plans[today] = state.plans[ui.date]; delete state.plans[ui.date]; ui.date = today; save(); } }
 else if (a === 'cmerge') {
 var ck = +t.getAttribute('data-k'), csrc = state.custom[ck], cdst = document.getElementById('cm-' + ck).value;
 if (!csrc) return;
 if (!cdst) { document.getElementById('cmm-' + ck).textContent = 'Choisis d’abord l’exercice dans lequel fusionner.'; return; }
 if (t.getAttribute('data-armed') !== '1') { t.setAttribute('data-armed', '1'); t.textContent = 'Confirmer la fusion ?'; return; }
 Object.keys(state.sessions).forEach(function (d) { state.sessions[d].ex.forEach(function (e) { if (e.m === csrc.id) e.m = cdst; }); });
-if (state.plan) state.plan.ex.forEach(function (e) { if (e.m === csrc.id) e.m = cdst; });
+Object.keys(state.plans).forEach(function (d) { state.plans[d].ex.forEach(function (e) { if (e.m === csrc.id) e.m = cdst; }); });
 state.custom.splice(ck, 1);
 ui.cmsg = '« ' + csrc.name + ' » a été fusionné.';
 save();
@@ -636,27 +664,27 @@ ui.cmsg = '« ' + dm.name + ' » a été supprimé.';
 save();
 }
 else if (a === 'runstart') {
-var pl = state.plan;
+var pl = PL();
 if (pl) {
 var k0 = 0;
 while (k0 < pl.ex.length && pl.ex[k0].sets.every(function (x) { return x.done; })) k0++;
 pl.idx = Math.min(k0, pl.ex.length - 1);
-ui.view = 'run'; ui.date = today; save(); window.scrollTo(0, 0);
+ui.view = 'run'; save(); window.scrollTo(0, 0);
 }
 }
 else if (a === 'runcheck') {
-var pe = state.plan.ex[i], ps = pe.sets[j];
+var pe = PL().ex[i], ps = pe.sets[j];
 ps.done = !ps.done;
 if (ps.done) {
 var allDone = pe.sets.every(function (x) { return x.done; });
-if (!(allDone && state.plan.idx === state.plan.ex.length - 1)) startTimer(allDone ? state.plan.restEx : (pe.rest || state.plan.rest));
+if (!(allDone && PL().idx === PL().ex.length - 1)) startTimer(allDone ? PL().restEx : (pe.rest || PL().rest));
 else stopTimer();
 }
 save();
 }
-else if (a === 'runaddset') { var ra = state.plan.ex[state.plan.idx].sets, rl = ra[ra.length - 1] || { kg: 0, reps: 10 }; ra.push({ kg: rl.kg, reps: rl.reps, done: false }); save(); }
-else if (a === 'runprev') { state.plan.idx = Math.max(0, state.plan.idx - 1); save(); window.scrollTo(0, 0); }
-else if (a === 'runnext') { state.plan.idx = Math.min(state.plan.ex.length - 1, state.plan.idx + 1); save(); window.scrollTo(0, 0); }
+else if (a === 'runaddset') { var ra = PL().ex[PL().idx].sets, rl = ra[ra.length - 1] || { kg: 0, reps: 10 }; ra.push({ kg: rl.kg, reps: rl.reps, done: false }); save(); }
+else if (a === 'runprev') { PL().idx = Math.max(0, PL().idx - 1); save(); window.scrollTo(0, 0); }
+else if (a === 'runnext') { PL().idx = Math.min(PL().ex.length - 1, PL().idx + 1); save(); window.scrollTo(0, 0); }
 else if (a === 'runend') { finishPlan(); window.scrollTo(0, 0); }
 else if (a === 'timer') startTimer(+t.getAttribute('data-s'));
 else if (a === 'tskip') stopTimer();
@@ -671,7 +699,7 @@ render();
 });
 document.addEventListener('input', function (ev) {
 var t = ev.target, f = t.getAttribute && t.getAttribute('data-f'), pf = t.getAttribute && t.getAttribute('data-pf');
-if (pf && state.plan) { state.plan.ex[+t.getAttribute('data-i')].sets[+t.getAttribute('data-j')][pf] = num(t.value); save(); return; }
+if (pf && PL()) { PL().ex[+t.getAttribute('data-i')].sets[+t.getAttribute('data-j')][pf] = num(t.value); save(); return; }
 var cf = t.getAttribute && t.getAttribute('data-cf');
 if (cf) {
 var cm = state.custom[+t.getAttribute('data-k')];
