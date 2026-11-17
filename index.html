@@ -65,6 +65,7 @@ h1 { font: 700 2.1rem/1.08 var(--display); letter-spacing: -.02em; margin: 0; te
 .set.hd { font-size: .75rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 600; }
 .set.hd.two { grid-template-columns: 2rem 1fr 44px; }
 .set.two { grid-template-columns: 2rem 1fr 44px; }
+.set.tm, .set.hd.tm { grid-template-columns: 2rem 1fr 44px 44px; }
 .n { color: var(--muted); font-variant-numeric: tabular-nums; font-weight: 600; }
 .num { width: 100%; min-height: 44px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); padding: 6px 10px; font-size: 1.05rem; font-variant-numeric: tabular-nums; }
 .x { width: 44px; height: 44px; border: 0; background: transparent; color: var(--muted); font-size: 1.2rem; border-radius: 10px; }
@@ -475,7 +476,7 @@ if (m.t === 'time') {
 var nj = -1;
 e.sets.forEach(function (x, k) { if (nj < 0 && !x.done) nj = k; });
 h += '<div class="swbox">';
-if (sw && sw.i === i) h += '<div class="swt" id="swt" role="timer"></div><div class="row"><button class="btn primary big" data-a="swstop">Terminer la série ' + (sw.j + 1) + '</button></div><div class="row"><button class="btn ghost" data-a="swcancel">Annuler</button></div>';
+if (sw && !sw.free && sw.i === i) h += '<div class="swt" id="swt" role="timer"></div><div class="row"><button class="btn primary big" data-a="swstop">Terminer la série ' + (sw.j + 1) + '</button></div><div class="row"><button class="btn ghost" data-a="swcancel">Annuler</button></div>';
 else if (nj >= 0) h += '<div class="row"><button class="btn primary big" data-a="swstart" data-i="' + i + '" data-j="' + nj + '">Lancer le chrono · série ' + (nj + 1) + ' (' + dur(e.sets[nj].reps) + ')</button></div><p class="hint">Départ après 5 secondes, un bip signale l’objectif atteint.</p>';
 h += '</div>';
 }
@@ -513,11 +514,14 @@ var m = M(e.m), t = !!m.t;
 h += '<section class="card" style="--c:var(--g-' + m.g + ')"><div class="ex-top"><div><span class="tag"><i class="dot"></i>' + GROUPS[m.g] + '</span><h2 class="ex-name">' + esc(m.name) + '</h2></div>' +
 '<button class="x" data-a="' + (ui.armed === 'ex' + i ? 'delex' : 'arm') + '" data-i="' + i + '" data-k="ex' + i + '" aria-label="Retirer l’exercice" style="' + (ui.armed === 'ex' + i ? 'color:var(--danger);font-size:.85rem;font-weight:600;width:auto;padding:0 8px' : '') + '">' + (ui.armed === 'ex' + i ? 'Retirer ?' : '✕') + '</button></div>';
 h += '<p class="hint" id="hint' + i + '">' + hintHtml(e) + '</p>';
-h += '<div class="sets"><div class="set hd' + (t ? ' two' : '') + '"><span>#</span>' + (t ? '<span>' + (m.t === 'time' ? 'Secondes' : 'Répétitions') + '</span>' : '<span>' + (m.assist ? 'Assistance (kg)' : 'Poids (kg)') + '</span><span>Répétitions</span>') + '<span></span></div>';
+var tm = m.t === 'time';
+if (tm && sw && sw.free && sw.date === ui.date && sw.i === i) h += '<div class="swbox"><div class="swt" id="swt" role="timer"></div><div class="row"><button class="btn primary big" data-a="fstop">Terminer la série ' + (sw.j + 1) + '</button></div><div class="row"><button class="btn ghost" data-a="swcancel">Annuler</button></div></div>';
+h += '<div class="sets"><div class="set hd' + (tm ? ' tm' : t ? ' two' : '') + '"><span>#</span>' + (t ? '<span>' + (m.t === 'time' ? 'Secondes' : 'Répétitions') + '</span>' : '<span>' + (m.assist ? 'Assistance (kg)' : 'Poids (kg)') + '</span><span>Répétitions</span>') + (tm ? '<span></span>' : '') + '<span></span></div>';
 e.sets.forEach(function (x, j) {
-h += '<div class="set' + (t ? ' two' : '') + '"><span class="n">' + (j + 1) + '</span>';
+h += '<div class="set' + (tm ? ' tm' : t ? ' two' : '') + '"><span class="n">' + (j + 1) + '</span>';
 if (!t) h += '<input class="num" type="number" inputmode="decimal" min="0" step="0.5" value="' + x.kg + '" data-f="kg" data-i="' + i + '" data-j="' + j + '" aria-label="Poids série ' + (j + 1) + '">';
 h += '<input class="num" type="number" inputmode="numeric" min="0" step="' + (m.t === 'time' ? 5 : 1) + '" value="' + x.reps + '" data-f="reps" data-i="' + i + '" data-j="' + j + '" aria-label="' + (m.t === 'time' ? 'Secondes' : 'Répétitions') + ' série ' + (j + 1) + '">';
+if (tm) h += '<button class="x" data-a="fstart" data-i="' + i + '" data-j="' + j + '" aria-label="Chronométrer la série ' + (j + 1) + '">⏱</button>';
 h += '<button class="x" data-a="delset" data-i="' + i + '" data-j="' + j + '" aria-label="Supprimer la série ' + (j + 1) + '">−</button></div>';
 });
 h += '</div><div class="row"><button class="btn" data-a="addset" data-i="' + i + '">+ Série</button></div></section>';
@@ -712,6 +716,7 @@ if (!t) return;
 var a = t.getAttribute('data-a'), i = +t.getAttribute('data-i'), j = +t.getAttribute('data-j');
 var s = state.sessions[ui.date];
 if (a !== 'arm') ui.armed = '';
+if (sw && sw.free && (a === 'view' || a === 'day' || a === 'today' || a === 'pick' || a === 'mon')) swStop();
 if (a === 'view') { ui.view = t.getAttribute('data-v'); window.scrollTo(0, 0); }
 else if (a === 'day') ui.date = shift(ui.date, +t.getAttribute('data-n'));
 else if (a === 'today') ui.date = today;
@@ -811,6 +816,13 @@ else if (a === 'swstop') {
 if (sw) {
 var sp = PL().ex[sw.i], sq = sp && sp.sets[sw.j], sn = swSec();
 if (sq && sn >= 1) { sq.reps = sn; sq.done = true; swStop(); afterSet(sp); save(); } else swStop();
+}
+}
+else if (a === 'fstart') { swStop(); if (s && s.ex[i] && s.ex[i].sets[j]) { stopTimer(); sw = { free: true, date: ui.date, i: i, j: j, start: Date.now() + 5000, target: s.ex[i].sets[j].reps, fired: false, go: false }; swId = setInterval(swUpdate, 250); } }
+else if (a === 'fstop') {
+if (sw && sw.free) {
+var fq = state.sessions[sw.date] && state.sessions[sw.date].ex[sw.i] && state.sessions[sw.date].ex[sw.i].sets[sw.j], fn = swSec();
+if (fq && fn >= 1) { fq.reps = fn; swStop(); startTimer(90); save(); } else swStop();
 }
 }
 else if (a === 'swcancel') swStop();
