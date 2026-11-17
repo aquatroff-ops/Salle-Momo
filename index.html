@@ -122,6 +122,8 @@ nav.bar button[aria-current="page"] { background: var(--soft); color: var(--acce
 .plist b { display: block; color: var(--fg); font-weight: 600; }
 .chips { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 0 0 14px; }
 .chips span { font-size: .85rem; color: var(--muted); font-weight: 600; }
+.swbox { margin: 4px 0 14px; }
+.swt { font-size: 3rem; font-weight: 800; text-align: center; font-variant-numeric: tabular-nums; margin: 6px 0 10px; }
 .chip { min-height: 40px; padding: 4px 14px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); font-weight: 600; }
 .tbar { position: fixed; left: 0; right: 0; bottom: calc(66px + env(safe-area-inset-bottom, 0px)); z-index: 6; display: flex; justify-content: center; padding: 0 max(16px, env(safe-area-inset-right, 0px)) 0 max(16px, env(safe-area-inset-left, 0px)); }
 .tbar .in { width: 100%; max-width: 34rem; background: var(--accent); color: var(--accent-fg); border-radius: 14px; padding: 6px 8px 8px 14px; display: flex; align-items: center; gap: 8px; position: relative; overflow: hidden; box-shadow: 0 4px 16px rgba(0,0,0,.25); }
@@ -327,7 +329,22 @@ ws = shift(ws, -7);
 while (weekCount(ws) >= GOAL) { n++; ws = shift(ws, -7); }
 return n;
 }
-var timer = null, tickId = null, wl = null;
+var timer = null, tickId = null, wl = null, sw = null, swId = null;
+function swSec() { return sw ? Math.max(0, Math.floor((Date.now() - sw.start) / 1000)) : 0; }
+function swStop() { sw = null; if (swId) { clearInterval(swId); swId = null; } }
+function swUpdate() {
+if (!sw) { if (swId) { clearInterval(swId); swId = null; } return; }
+var now = Date.now(), el = document.getElementById('swt');
+if (now < sw.start) { if (el) el.textContent = 'Prêt dans ' + Math.ceil((sw.start - now) / 1000); return; }
+if (!sw.go) { sw.go = true; beep(); }
+var n = swSec();
+if (!sw.fired && sw.target && n >= sw.target) { sw.fired = true; beep(); }
+if (el) el.textContent = Math.floor(n / 60) + ':' + pad(n % 60) + (sw.target ? ' / ' + Math.floor(sw.target / 60) + ':' + pad(sw.target % 60) : '');
+}
+function afterSet(pe) {
+var p = PL(), allDone = pe.sets.every(function (x) { return x.done; });
+if (!(allDone && p.idx === p.ex.length - 1)) startTimer(allDone ? p.restEx : (pe.rest || p.rest)); else stopTimer();
+}
 function wake(on) {
 try {
 if (on && !wl && navigator.wakeLock) navigator.wakeLock.request('screen').then(function (l) { wl = l; l.addEventListener('release', function () { wl = null; }); }, function () {});
@@ -410,15 +427,19 @@ return { ok: true, dates: got, msg: got.length > 1 ? got.length + ' séances pro
 function finishPlan() {
 var p = PL(), ses = null;
 if (!p) return;
+var notes = [];
 p.ex.forEach(function (e) {
 var d = e.sets.filter(function (x) { return x.done; }).map(function (x) { return { kg: x.kg, reps: x.reps }; });
+var nt = String(e.note || '').trim();
+if (nt) notes.push(M(e.m).name + ' : ' + nt.replace(/\s*\n+\s*/g, ' / '));
 if (!d.length) return;
 if (!ses) ses = state.sessions[today] = state.sessions[today] || { note: '', ex: [] };
 ses.ex.push({ m: e.m, sets: d });
 });
-if (ses && !ses.note) ses.note = 'Séance préparée : ' + p.titre;
+if (notes.length && !ses) ses = state.sessions[today] = state.sessions[today] || { note: '', ex: [] };
+if (ses) { if (!ses.note) ses.note = 'Séance préparée : ' + p.titre; if (notes.length) ses.note += '\n' + notes.join('\n'); }
 delete state.plans[ui.date];
-ui.view = 'seance'; ui.date = today; stopTimer(); save();
+ui.view = 'seance'; ui.date = today; stopTimer(); swStop(); save();
 }
 function planCard() {
 var p = PL();
@@ -450,6 +471,14 @@ h += '<div class="prog">' + p.ex.map(function (x, k) { var all = x.sets.every(fu
 h += chips();
 h += '<section class="card" style="--c:var(--g-' + m.g + ')"><span class="tag"><i class="dot"></i>' + GROUPS[m.g] + '</span>';
 h += '<p class="hint">' + hintHtml({ m: e.m, sets: e.sets.filter(function (x) { return x.done; }) }) + '</p>';
+if (m.t === 'time') {
+var nj = -1;
+e.sets.forEach(function (x, k) { if (nj < 0 && !x.done) nj = k; });
+h += '<div class="swbox">';
+if (sw && sw.i === i) h += '<div class="swt" id="swt" role="timer"></div><div class="row"><button class="btn primary big" data-a="swstop">Terminer la série ' + (sw.j + 1) + '</button></div><div class="row"><button class="btn ghost" data-a="swcancel">Annuler</button></div>';
+else if (nj >= 0) h += '<div class="row"><button class="btn primary big" data-a="swstart" data-i="' + i + '" data-j="' + nj + '">Lancer le chrono · série ' + (nj + 1) + ' (' + dur(e.sets[nj].reps) + ')</button></div><p class="hint">Départ après 5 secondes, un bip signale l’objectif atteint.</p>';
+h += '</div>';
+}
 h += '<div class="sets"><div class="set hd rg' + (one ? ' one' : '') + '"><span>#</span>' + (one ? '<span>' + (m.t === 'time' ? 'Secondes' : 'Répétitions') + '</span>' : '<span>' + (m.assist ? 'Assistance (kg)' : 'Poids (kg)') + '</span><span>Répétitions</span>') + '<span></span></div>';
 e.sets.forEach(function (x, j) {
 h += '<div class="set rg' + (one ? ' one' : '') + (x.done ? ' done' : '') + '"><span class="n">' + (j + 1) + '</span>';
@@ -458,6 +487,7 @@ h += '<input class="num" type="number" inputmode="numeric" min="0" step="' + (m.
 h += '<button class="chk" data-a="runcheck" data-i="' + i + '" data-j="' + j + '" aria-pressed="' + (x.done ? 'true' : 'false') + '" aria-label="Valider la série ' + (j + 1) + '">✓</button></div>';
 });
 h += '</div><div class="row"><button class="btn" data-a="runaddset">+ Série</button></div></section>';
+h += '<section class="card"><label class="lbl" for="pn">Note sur cet exercice</label><textarea id="pn" data-pn="' + i + '" placeholder="Douleur, sensation, réglage de la machine…">' + esc(e.note || '') + '</textarea></section>';
 h += '<div class="row">' + (i > 0 ? '<button class="btn" data-a="runprev">‹ Précédent</button>' : '') + (isLast ? '<button class="btn primary" data-a="runend">Terminer la séance</button>' : '<button class="btn primary" data-a="runnext">Exercice suivant ›</button>') + '</div>';
 if (!isLast) h += '<div class="row"><button class="btn ghost" data-a="' + (ui.armed === 'end' ? 'runend' : 'arm') + '" data-k="end">' + (ui.armed === 'end' ? 'Terminer maintenant ?' : 'Terminer maintenant') + '</button></div>';
 return h;
@@ -658,6 +688,7 @@ var app = document.getElementById('app');
 app.innerHTML = ui.view === 'cal' ? viewCal() : ui.view === 'mach' ? viewMach() : ui.view === 'stats' ? viewStats() : ui.view === 'run' ? viewRun() : viewSeance();
 wake(ui.view === 'run');
 updateTbar();
+swUpdate();
 Array.prototype.forEach.call(document.querySelectorAll('nav.bar button'), function (b) {
 if (b.getAttribute('data-v') === (ui.view === 'run' ? 'seance' : ui.view)) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
 });
@@ -771,17 +802,21 @@ ui.view = 'run'; save(); window.scrollTo(0, 0);
 else if (a === 'runcheck') {
 var pe = PL().ex[i], ps = pe.sets[j];
 ps.done = !ps.done;
-if (ps.done) {
-var allDone = pe.sets.every(function (x) { return x.done; });
-if (!(allDone && PL().idx === PL().ex.length - 1)) startTimer(allDone ? PL().restEx : (pe.rest || PL().rest));
-else stopTimer();
-}
+if (ps.done) afterSet(pe);
 save();
 }
 else if (a === 'runaddset') { var ra = PL().ex[PL().idx].sets, rl = ra[ra.length - 1] || { kg: 0, reps: 10 }; ra.push({ kg: rl.kg, reps: rl.reps, done: false }); save(); }
-else if (a === 'runprev') { PL().idx = Math.max(0, PL().idx - 1); save(); window.scrollTo(0, 0); }
-else if (a === 'runnext') { PL().idx = Math.min(PL().ex.length - 1, PL().idx + 1); save(); window.scrollTo(0, 0); }
-else if (a === 'runend') { finishPlan(); window.scrollTo(0, 0); }
+else if (a === 'swstart') { swStop(); var se = PL().ex[i]; if (se && se.sets[j]) { stopTimer(); sw = { i: i, j: j, start: Date.now() + 5000, target: se.sets[j].reps, fired: false, go: false }; swId = setInterval(swUpdate, 250); } }
+else if (a === 'swstop') {
+if (sw) {
+var sp = PL().ex[sw.i], sq = sp && sp.sets[sw.j], sn = swSec();
+if (sq && sn >= 1) { sq.reps = sn; sq.done = true; swStop(); afterSet(sp); save(); } else swStop();
+}
+}
+else if (a === 'swcancel') swStop();
+else if (a === 'runprev') { swStop(); PL().idx = Math.max(0, PL().idx - 1); save(); window.scrollTo(0, 0); }
+else if (a === 'runnext') { swStop(); PL().idx = Math.min(PL().ex.length - 1, PL().idx + 1); save(); window.scrollTo(0, 0); }
+else if (a === 'runend') { swStop(); finishPlan(); window.scrollTo(0, 0); }
 else if (a === 'timer') startTimer(+t.getAttribute('data-s'));
 else if (a === 'tskip') stopTimer();
 else if (a === 'tplus') { if (timer && !timer.fired) { timer.end += 30000; timer.total += 30; } else startTimer(30); updateTbar(); }
@@ -794,7 +829,8 @@ return;
 render();
 });
 document.addEventListener('input', function (ev) {
-var t = ev.target, f = t.getAttribute && t.getAttribute('data-f'), pf = t.getAttribute && t.getAttribute('data-pf');
+var t = ev.target, f = t.getAttribute && t.getAttribute('data-f'), pf = t.getAttribute && t.getAttribute('data-pf'), pn = t.getAttribute && t.getAttribute('data-pn');
+if (pn != null && PL() && PL().ex[+pn]) { PL().ex[+pn].note = t.value.slice(0, 500); save(); return; }
 if (pf && PL()) { PL().ex[+t.getAttribute('data-i')].sets[+t.getAttribute('data-j')][pf] = num(t.value); save(); return; }
 var cf = t.getAttribute && t.getAttribute('data-cf');
 if (cf) {
@@ -814,7 +850,7 @@ var hi = t.getAttribute('data-i'), hp = document.getElementById('hint' + hi);
 if (hp) hp.innerHTML = hintHtml(s.ex[+hi]);
 });
 document.addEventListener('change', function (ev) { if (ev.target && ev.target.id === 'sel') { var el = document.getElementById('selinfo'); if (el) el.innerHTML = infoFor(ev.target.value); } });
-document.addEventListener('visibilitychange', function () { if (!document.hidden) { tick(); if (ui.view === 'run') wake(true); } });
+document.addEventListener('visibilitychange', function () { if (!document.hidden) { tick(); swUpdate(); if (ui.view === 'run') wake(true); } });
 document.getElementById('imp').addEventListener('change', function (ev) {
 var file = ev.target.files && ev.target.files[0];
 if (!file) return;
